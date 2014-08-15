@@ -1,16 +1,14 @@
 package com.adesis.poc.gitdb;
 
-import static com.adesis.poc.gitdb.GitHelper.cloneAndBranchRepository;
-import static com.adesis.poc.gitdb.GitHelper.cloneRepository;
-import static com.adesis.poc.gitdb.GitHelper.createBareRepository;
-import static com.adesis.poc.gitdb.GitHelper.getRepoUri;
-import static com.adesis.poc.gitdb.GitHelper.pushToRemoteRepository;
+import static com.adesis.poc.gitdb.ProductGitHelper.cloneAndBranchRepository;
+import static com.adesis.poc.gitdb.ProductGitHelper.cloneRepository;
+import static com.adesis.poc.gitdb.ProductGitHelper.createBareRepository;
+import static com.adesis.poc.gitdb.ProductGitHelper.pushToRemoteRepository;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -41,16 +39,18 @@ public class Account {
 	public static Account createNewAccount(String accountId) throws Exception {
 		try {
 			final Account account = new Account(accountId, 0.0, new ArrayList<AccountTransaction>());
-			final String targetPath = "/tmp/account-clones/" + UUID.randomUUID().toString();
-			
-			createBareRepository(getRepoUri(accountId));
-			final Git git = cloneRepository(getRepoUri(accountId), targetPath);
-			writeAccountInfo(account, targetPath);
+			createBareRepository(accountId);
+			final Git git = cloneRepository(accountId);
+			writeAccountInfo(account, getRepoPath(git));
 			pushToRemoteRepository(git, "Account intialized.");
 			return account;
 		} catch (Exception e) {
 			throw new Exception("Could not create the new Account: " + e.toString(), e);
 		}
+	}
+
+	private static String getRepoPath(final Git git) {
+		return git.getRepository().getDirectory().getAbsolutePath().replace("/.git", "");
 	}
 
 	private static void writeAccountInfo(Account account, String targetPath) throws JsonGenerationException, JsonMappingException, IOException {
@@ -59,14 +59,15 @@ public class Account {
 
 	public static String addTransaction(String accountId, AccountTransaction accountTransaction) throws Exception {
 		try {
-			final String targetPath = "/tmp/account-clones/" + UUID.randomUUID().toString();
 			final String operationId = "addTransaction-" + accountTransaction.getId();
-			final Git git = cloneAndBranchRepository(getRepoUri(accountId), targetPath, operationId );
-			Account account = readAccountInfo(targetPath);
+			final Git git = cloneAndBranchRepository(accountId, operationId );
+			String targetPath = getRepoPath(git);
+			Account account = readAccountInfo(targetPath );
 			account.getTransactions().add(accountTransaction);
 			updateBalance(accountTransaction, account);
 			writeAccountInfo(account, targetPath);
 			pushToRemoteRepository(git, "Transacion added.");
+			FileUtils.deleteDirectory( new File(getRepoPath(git)) );
 			return operationId;
 		} catch (Exception e) {
 			throw new Exception("Could not create the new Account: " + e.toString(), e);
@@ -86,8 +87,7 @@ public class Account {
 
 	public static void commitOperation(String accountId, String operationId) throws Exception {
 		try {
-			final String targetPath = "/tmp/account-clones/" + UUID.randomUUID().toString();
-			final Git git = cloneRepository(getRepoUri(accountId), targetPath);
+			final Git git = cloneRepository(accountId);
 			MergeResult mergeResult = git
 					.merge()
 					.include( git.getRepository().getRef("remotes/origin/" + operationId))
@@ -98,7 +98,6 @@ public class Account {
 			}
 			git.push().setPushAll().setRemote("origin").call();
 			git.close();
-			FileUtils.deleteDirectory( git.getRepository().getDirectory() );
 		} catch (Exception e) {
 			throw new Exception("Could not create the new Account: " + e.toString(), e);
 		}
